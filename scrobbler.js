@@ -474,7 +474,7 @@ function submit() {
 
 /**
  * Extension inferface for content_script
- * nowPlaying(artist, track, duration) - send info to server which song is playing right now
+ * nowPlaying(artist, track, currentTime, duration) - send info to server which song is playing right now
  * xhr(url) - send XHR GET request and return response text
  * newSession() - start a new last.fm session (need to reauthenticate)
  * validate(artist, track) - validate artist-track pair against last.fm and return false or the valid song
@@ -514,6 +514,8 @@ chrome.extension.onRequest.addListener(
                         song.artist = request.artist;
                      if (typeof(request.track) != 'undefined')
                         song.track = request.track;
+                     if (typeof(request.currentTime) != 'undefined')
+                        song.currentTime = request.currentTime;
                      if (typeof(request.duration) != 'undefined')
                         song.duration = request.duration;
 
@@ -526,9 +528,9 @@ chrome.extension.onRequest.addListener(
                      song = {
                         artist : request.artist,
                         track : request.track,
-                        /* album : request.album, */
+                        currentTime : request.currentTime,
                         duration : request.duration,
-                        startTime : parseInt(new Date().getTime() / 1000.0) // in seconds
+                        startTime : ( parseInt (new Date().getTime() / 1000.0) - request.currentTime) // in seconds
                      }
 
                      // make the connection to last.fm service to notify
