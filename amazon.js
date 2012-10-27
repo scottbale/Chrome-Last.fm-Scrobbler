@@ -13,7 +13,7 @@
 LFM_WATCHED_CONTAINER = "div.nowPlayingDetail";
 
 // changes to the DOM in this container are due to play/pause
-LFM_PLAY_PAUSE_CONTAINER = "div.mp3PlayPauseGroup";
+LFM_PLAY_PAUSE = "div.mp3MasterPlay";
 
 // function that returns title of current song
 function LFM_TRACK_TITLE() {
@@ -71,6 +71,13 @@ function LFM_updateNowPlaying(){
   LFM_isWaiting = 0;
 }
 
+function updateIfNotWaiting() {
+  if(LFM_isWaiting == 0){
+    LFM_isWaiting = 1;
+    setTimeout(LFM_updateNowPlaying, 10000);
+  }
+}
+
 // Run at startup
 $(function(){
   console.log("Amazon module starting up");
@@ -78,21 +85,21 @@ $(function(){
   $(LFM_WATCHED_CONTAINER).live('DOMSubtreeModified', function(e) {
     //console.log("Live watcher called");
     if ($(LFM_WATCHED_CONTAINER).length > 0) {
-      if(LFM_isWaiting == 0){
-	LFM_isWaiting = 1;
-	setTimeout(LFM_updateNowPlaying, 10000);
-      }
+      updateIfNotWaiting();
       return;
     }
   });
 
-  $(LFM_PLAY_PAUSE_CONTAINER).live('DOMSubtreeModified', function(e) {
-    if ($(LFM_PLAY_PAUSE_CONTAINER).length > 0) {
-      if ( // TODO jQuery check for class "paused" or "playing" on
-        // this guy)
-
-      return;
+  $("div.mp3Player-MasterControl").click( function(e) {
+    console.log("play/pause clicked");
+    if ( $("div.mp3MasterPlayGroup").hasClass("paused")) {
+      console.log("paused");
+      chrome.extension.sendRequest({type: "reset"});
+    } else if ( $("div.mp3MasterPlayGroup").hasClass("playing")) {
+      console.log("unpaused");
+      updateIfNotWaiting();
     }
+    return;
   });
 
   $(window).unload(function() {
@@ -100,3 +107,7 @@ $(function(){
     return true;
   });
 });
+
+
+
+
