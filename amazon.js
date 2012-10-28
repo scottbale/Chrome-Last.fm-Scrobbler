@@ -41,6 +41,84 @@ function LFM_TRACK_DURATION() {
 
 /********* Connector: ***********/
 
+var module = function() {
+
+  // encapsulate some "private" state
+  var state = {
+    lastTrack : "",
+    lock : 0;
+  }
+
+  var parseNewState = function() {
+    return {
+      title : LFM_TRACK_TITLE(),
+      artist : LFM_TRACK_ARTIST(),
+      currentTime : LFM_CURRENT_TIME(),
+      duration : LFM_TRACK_DURATION(),
+      track : title + " " + artist
+    }
+  }
+
+  // Queue of functions to be executed. Everything is
+  // queued up here, to ensure proper ordering of 
+  // (possibly asynchronous) operations
+  var queue = [];
+
+  var enqueue = function(f) {
+    queue.push(f);
+  }
+
+  var executeNext = function() {
+    // Remove and execute the first function on the queue.
+    (queue.shift())();
+  }
+
+  var update = function(newState, isResume) {
+    console.log("submitting a now playing request. artist: "+newState.artist+", title: "+newState.title+", current time: "+newState.currentTime+", duration: "+newState.duration);
+    state.lastTrack = newState.track;
+    chrome.extension.sendRequest({type: 'validate', artist: newState.artist, track: newState.title}, function(response) {
+      if (response != false) {
+	chrome.extension.sendRequest({type: 'nowPlaying', artist: newState.artist, track: newState.title, currentTime:newState.currentTime, duration: newState.duration});
+      } else { // on failure send nowPlaying 'unknown song'
+	chrome.extension.sendRequest({type: 'nowPlaying', duration: newState.duration});
+      }
+    });
+    state.lock = 0;
+  }
+
+  var isReadyToUpdate? = function(newState, isResume) {
+    return (state.lock == 0 && newState.track != "" && (isResume || track != state.lastTrack));
+  }
+
+  var updateNowOrDelay = function(isResume) {
+    var newState = parseNewState();
+    if (isReadyToUpdate(newState, isResume)) {
+      enqueue(function() {update(newState, isResume);});
+      executeNext();
+    } else {
+      enqueue(function() {updateNowOrDelay(isResume);});
+      state.lock = 1;
+      setTimeout(executeNext, 5000);
+    }
+  }
+
+  return {
+    updateNowPlaying : function() {
+      updateNowOrDelay(false);
+    }
+    pause : function() {
+      this.reset();
+    }
+    resume : function() {
+      updateNowOrDelay(true);
+    }
+    reset : function() {
+      enqueue(function() {chrome.extension.sendRequest({type: "reset"});});
+      executeNext();
+    }
+  }
+}();
+
 var LFM_lastTrack = "";
 var LFM_isWaiting = 0;
 
