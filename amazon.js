@@ -43,37 +43,25 @@ function LFM_TRACK_DURATION() {
 
 var module = function() {
 
-  // encapsulate some "private" state
+  // encapsulate some "private" state and functions
   var state = {
     lastTrack : "",
-    lock : 0;
+    lock : 0
   }
 
   var parseNewState = function() {
+    var t = LFM_TRACK_TITLE();
+    var a = LFM_TRACK_ARTIST();
     return {
-      title : LFM_TRACK_TITLE(),
-      artist : LFM_TRACK_ARTIST(),
+      title : t,
+      artist : a,
       currentTime : LFM_CURRENT_TIME(),
       duration : LFM_TRACK_DURATION(),
-      track : title + " " + artist
+      track : t + " " + a
     }
   }
 
-  // Queue of functions to be executed. Everything is
-  // queued up here, to ensure proper ordering of 
-  // (possibly asynchronous) operations
-  var queue = [];
-
-  var enqueue = function(f) {
-    queue.push(f);
-  }
-
-  var executeNext = function() {
-    // Remove and execute the first function on the queue.
-    (queue.shift())();
-  }
-
-  var update = function(newState, isResume) {
+  var update = function(newState) {
     console.log("submitting a now playing request. artist: "+newState.artist+", title: "+newState.title+", current time: "+newState.currentTime+", duration: "+newState.duration);
     state.lastTrack = newState.track;
     chrome.extension.sendRequest({type: 'validate', artist: newState.artist, track: newState.title}, function(response) {
@@ -86,41 +74,95 @@ var module = function() {
     state.lock = 0;
   }
 
-  var isReadyToUpdate? = function(newState, isResume) {
-    return (state.lock == 0 && newState.track != "" && (isResume || track != state.lastTrack));
+  var isReadyToUpdate = function(newState) {
+    return (newState.currentTime >= 0 && newState.duration > 0 && newState.track != "" && newState.track != state.lastTrack);
   }
 
-  var updateNowOrDelay = function(isResume) {
+  var isReadyToResume = function(newState) {
+    return (newState.currentTime >= 0 && newState.duration > 0 && newState.track != "" && newState.track == state.lastTrack);
+  }
+
+  var maybeUpdateOrResume = function(tryAgainFn, predicate) {
     var newState = parseNewState();
-    if (isReadyToUpdate(newState, isResume)) {
-      enqueue(function() {update(newState, isResume);});
-      executeNext();
+    if (predicate(newState)) {
+      update(newState);
     } else {
-      enqueue(function() {updateNowOrDelay(isResume);});
-      state.lock = 1;
-      setTimeout(executeNext, 5000);
+      setTimeout(tryAgainFn, 1000);
     }
   }
 
+  var maybeUpdate = function() {
+    maybeUpdateOrResume(maybeUpdate, isReadyToUpdate);
+  }
+
+  var maybeResume = function() {
+    maybeUpdateOrResume(maybeResume, isReadyToResume);
+  }
+
+  var cancelUpdate = function() {
+    clearTimeout();
+    state.lock = 0;
+  }
+
+  var updateIfNotLocked = function(fn) {
+    if (state.lock == 0) {
+      state.lock = 1;
+      setTimeout(fn, 2000);
+    }
+  }
+
+  // Here is the "public" API
   return {
     updateNowPlaying : function() {
-      updateNowOrDelay(false);
-    }
+      updateIfNotLocked(maybeUpdate);
+    },
     pause : function() {
       this.reset();
-    }
+    },
     resume : function() {
-      updateNowOrDelay(true);
-    }
+      maybeResume();
+    },
     reset : function() {
-      enqueue(function() {chrome.extension.sendRequest({type: "reset"});});
-      executeNext();
+      cancelUpdate();
+      chrome.extension.sendRequest({type: "reset"});
     }
   }
 }();
 
-var LFM_lastTrack = "";
-var LFM_isWaiting = 0;
+
+// Run at startup
+$(function(){
+  console.log("Amazon module starting up");
+
+  $(LFM_WATCHED_CONTAINER).live('DOMSubtreeModified', function(e) {
+    //console.log("Live watcher called");
+    if ($(LFM_WATCHED_CONTAINER).length > 0) {
+      module.updateNowPlaying();
+      return;
+    }
+  });
+
+  $("div.mp3Player-MasterControl").click( function(e) {
+    if ( $("div.mp3MasterPlayGroup").hasClass("paused")) {
+      console.log("paused");
+      module.pause();
+    } else if ( $("div.mp3MasterPlayGroup").hasClass("playing")) {
+      console.log("unpaused");
+      module.resume();
+    }
+    return;
+  });
+
+  $(window).unload(function() {
+    module.reset();
+    return true;
+  });
+});
+
+
+
+
+// OLD STUFF
 
 function LFM_updateNowPlaying(){
   // Acquire data from page
@@ -155,37 +197,3 @@ function updateIfNotWaiting() {
     setTimeout(LFM_updateNowPlaying, 10000);
   }
 }
-
-// Run at startup
-$(function(){
-  console.log("Amazon module starting up");
-
-  $(LFM_WATCHED_CONTAINER).live('DOMSubtreeModified', function(e) {
-    //console.log("Live watcher called");
-    if ($(LFM_WATCHED_CONTAINER).length > 0) {
-      updateIfNotWaiting();
-      return;
-    }
-  });
-
-  $("div.mp3Player-MasterControl").click( function(e) {
-    console.log("play/pause clicked");
-    if ( $("div.mp3MasterPlayGroup").hasClass("paused")) {
-      console.log("paused");
-      chrome.extension.sendRequest({type: "reset"});
-    } else if ( $("div.mp3MasterPlayGroup").hasClass("playing")) {
-      console.log("unpaused");
-      updateIfNotWaiting();
-    }
-    return;
-  });
-
-  $(window).unload(function() {
-    chrome.extension.sendRequest({type: 'reset'});
-    return true;
-  });
-});
-
-
-
-
