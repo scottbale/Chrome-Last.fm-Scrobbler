@@ -459,7 +459,7 @@ function submit() {
 
       // Confirm the content script, that the song has been scrobbled
       if (nowPlayingTab)
-         chrome.tabs.sendRequest(nowPlayingTab, {type: "submitOK"});
+        chrome.tabs.sendRequest(nowPlayingTab, {type: "submitOK", song: {artist:song.artist, track: song.track}});
 
    } else {
       console.log('submit failed %s - %s (%s)', song.artist, song.track, http_request.responseText);
@@ -536,8 +536,10 @@ chrome.extension.onRequest.addListener(
                      // make the connection to last.fm service to notify
                      nowPlaying();
 
-                     // The minimum time is 240 seconds or half the track's total length
-                     var min_time = Math.min(240, song.duration / 2);
+                     // The minimum time is 240 seconds or half the
+                     // track's total length. Subtract the song's
+                     // current time (for the case of unpausing).
+                     var min_time = (Math.max(1, Math.min(240, song.duration / 2) - song.currentTime));
                      // Set up the timer
                      scrobbleTimeout = setTimeout(submit, min_time * 1000);
                   }

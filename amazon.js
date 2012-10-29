@@ -49,13 +49,26 @@ function isPlaying() {
 
 /********* Connector: ***********/
 
+var track = function(title, artist) {
+  return title + " " + artist;
+}
+
+var songTrack = function (song) {
+  return track (song.title, song.artist);
+}
+
 var module = function() {
 
-  var initState = function() {
+  var resetState = function (track) {
     return {
-      lastTrack : "",
-      lock : 0
+      lastTrack : track,
+      lock : false,
+      scrobbled : false
     }
+  }
+
+  var initState = function() {
+    return resetState ("");
   }
 
   // encapsulate some "private" state and functions
@@ -69,13 +82,22 @@ var module = function() {
       artist : a,
       currentTime : LFM_CURRENT_TIME(),
       duration : LFM_TRACK_DURATION(),
-      track : t + " " + a
+      track : track (t, a)
+    }
+  }
+
+  var maybeScrobbled = function (scrobbledSong) {
+    console.log ("maybe scrobbled: " + songTrack (scrobbledSong) + " ?= " + state.lastTrack);
+    if (state.lastTrack == songTrack (scrobbledSong)) {
+      state.scrobbled = true;
+      console.log ("yes, scrobbled");
+    } else {
+      console.log ("nope");
     }
   }
 
   var update = function(newState) {
     console.log("submitting a now playing request. artist: "+newState.artist+", title: "+newState.title+", current time: "+newState.currentTime+", duration: "+newState.duration);
-    state.lastTrack = newState.track;
     chrome.extension.sendRequest({type: 'validate', artist: newState.artist, track: newState.title}, function(response) {
       if (response != false) {
 	chrome.extension.sendRequest({type: 'nowPlaying', artist: newState.artist, track: newState.title, currentTime:newState.currentTime, duration: newState.duration});
@@ -83,7 +105,7 @@ var module = function() {
 	chrome.extension.sendRequest({type: 'nowPlaying', duration: newState.duration});
       }
     });
-    state.lock = 0;
+    state = resetState (newState.track);
   }
 
   var isReadyToUpdate = function(newState) {
@@ -103,14 +125,18 @@ var module = function() {
     }
   }
 
-  var cancelUpdate = function() {
-    clearTimeout();
-    state = initState();
+  var cancelAndReset = function(force) {
+    if (force || !(state.scrobbled)) {
+      console.log ("resetting...")
+      clearTimeout();
+      state = initState();
+      chrome.extension.sendRequest({type: "reset"});
+    }
   }
 
   var updateIfNotLocked = function() {
-    if (state.lock == 0) {
-      state.lock = 1;
+    if (!state.lock) {
+      state.lock = true;
       setTimeout(maybeUpdate, 2000);
     }
   }
@@ -121,17 +147,44 @@ var module = function() {
       updateIfNotLocked();
     },
     pause : function() {
-      this.reset();
+      cancelAndReset(false);
     },
     resume : function() {
       this.updateNowPlaying();
     },
     reset : function() {
-      cancelUpdate();
-      chrome.extension.sendRequest({type: "reset"});
+      cancelAndReset(true);
+    },
+    // Handle confirmation from main scrobbler.js
+    scrobbled : function (song) {
+      maybeScrobbled (song);
     }
   }
 }();
+
+/**
+ * Listen for requests from scrobbler.js
+ */
+chrome.extension.onRequest.addListener(
+  function(request, sender, sendResponse) {
+    switch(request.type) {
+    case 'submitOK':
+      // translate song from scrobbler.js to amazon.js - TODO Clean
+      // this up re: "title" versus "track" confusion
+      var amazonSong = {artist: request.song.artist, title: request.song.track};
+      console.log ("got submitOK for song: " + songTrack (amazonSong));
+      module.scrobbled (amazonSong);
+      break;
+
+    // not used yet
+    case 'submitFAIL':
+      console.log ("got submitFAIL");
+      //alert('submit fail');
+      break;
+    }
+  }
+);
+
 
 // Run at startup
 $(function(){
