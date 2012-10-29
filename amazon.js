@@ -12,8 +12,8 @@
 // changes to the DOM in this container will trigger an update.
 LFM_WATCHED_CONTAINER = "div.nowPlayingDetail";
 
-// changes to the DOM in this container are due to play/pause
-LFM_PLAY_PAUSE = "div.mp3MasterPlay";
+// changes to the DOM in this container are due to play/pause/forward/back
+LFM_PLAYER_MASTER_CONTROL = "div.mp3Player-MasterControl";
 
 // function that returns title of current song
 function LFM_TRACK_TITLE() {
@@ -38,16 +38,28 @@ function LFM_TRACK_DURATION() {
   return parseInt(durationArr[0])*60 + parseInt(durationArr[1]);
 }
 
+function isPaused() {
+  return $("div.mp3MasterPlayGroup").hasClass("paused");
+}
+
+function isPlaying() {
+  return $("div.mp3MasterPlayGroup").hasClass("playing");
+}
+
 
 /********* Connector: ***********/
 
 var module = function() {
 
-  // encapsulate some "private" state and functions
-  var state = {
-    lastTrack : "",
-    lock : 0
+  var initState = function() {
+    return {
+      lastTrack : "",
+      lock : 0
+    }
   }
+
+  // encapsulate some "private" state and functions
+  var state = initState();
 
   var parseNewState = function() {
     var t = LFM_TRACK_TITLE();
@@ -75,52 +87,44 @@ var module = function() {
   }
 
   var isReadyToUpdate = function(newState) {
-    return (newState.currentTime >= 0 && newState.duration > 0 && newState.track != "" && newState.track != state.lastTrack);
-  }
-
-  var isReadyToResume = function(newState) {
-    return (newState.currentTime >= 0 && newState.duration > 0 && newState.track != "" && newState.track == state.lastTrack);
-  }
-
-  var maybeUpdateOrResume = function(tryAgainFn, predicate) {
-    var newState = parseNewState();
-    if (predicate(newState)) {
-      update(newState);
-    } else {
-      setTimeout(tryAgainFn, 1000);
-    }
+    return (isPlaying() && 
+            newState.currentTime >= 0 && 
+            newState.duration > 0 && 
+            newState.track != "" && 
+            newState.track != state.lastTrack);
   }
 
   var maybeUpdate = function() {
-    maybeUpdateOrResume(maybeUpdate, isReadyToUpdate);
-  }
-
-  var maybeResume = function() {
-    maybeUpdateOrResume(maybeResume, isReadyToResume);
+    var newState = parseNewState();
+    if (isReadyToUpdate(newState)) {
+      update(newState);
+    } else {
+      setTimeout(maybeUpdate, 1000);
+    }
   }
 
   var cancelUpdate = function() {
     clearTimeout();
-    state.lock = 0;
+    state = initState();
   }
 
-  var updateIfNotLocked = function(fn) {
+  var updateIfNotLocked = function() {
     if (state.lock == 0) {
       state.lock = 1;
-      setTimeout(fn, 2000);
+      setTimeout(maybeUpdate, 2000);
     }
   }
 
   // Here is the "public" API
   return {
     updateNowPlaying : function() {
-      updateIfNotLocked(maybeUpdate);
+      updateIfNotLocked();
     },
     pause : function() {
       this.reset();
     },
     resume : function() {
-      maybeResume();
+      this.updateNowPlaying();
     },
     reset : function() {
       cancelUpdate();
@@ -128,7 +132,6 @@ var module = function() {
     }
   }
 }();
-
 
 // Run at startup
 $(function(){
@@ -142,11 +145,11 @@ $(function(){
     }
   });
 
-  $("div.mp3Player-MasterControl").click( function(e) {
-    if ( $("div.mp3MasterPlayGroup").hasClass("paused")) {
+  $(LFM_PLAYER_MASTER_CONTROL).click( function(e) {
+    if (isPaused()) {
       console.log("paused");
       module.pause();
-    } else if ( $("div.mp3MasterPlayGroup").hasClass("playing")) {
+    } else if (isPlaying()) {
       console.log("unpaused");
       module.resume();
     }
@@ -158,42 +161,3 @@ $(function(){
     return true;
   });
 });
-
-
-
-
-// OLD STUFF
-
-function LFM_updateNowPlaying(){
-  // Acquire data from page
-  title = LFM_TRACK_TITLE();
-  artist = LFM_TRACK_ARTIST();
-  currentTime = LFM_CURRENT_TIME ();
-  duration = LFM_TRACK_DURATION();
-  newTrack = title + " " + artist;
-  // Update scrobbler if necessary
-  if (newTrack != "" && newTrack != LFM_lastTrack){
-    if (duration == 0) {
-      // Nasty workaround for delayed duration visiblity with skipped tracks.
-      setTimeout(LFM_updateNowPlaying, 5000);
-      return 0;
-    }
-    console.log("submitting a now playing request. artist: "+artist+", title: "+title+", current time: "+currentTime+", duration: "+duration);
-    LFM_lastTrack = newTrack;
-    chrome.extension.sendRequest({type: 'validate', artist: artist, track: title}, function(response) {
-      if (response != false) {
-	chrome.extension.sendRequest({type: 'nowPlaying', artist: artist, track: title, currentTime:currentTime, duration: duration});
-      } else { // on failure send nowPlaying 'unknown song'
-	chrome.extension.sendRequest({type: 'nowPlaying', duration: duration});
-      }
-    });
-  }
-  LFM_isWaiting = 0;
-}
-
-function updateIfNotWaiting() {
-  if(LFM_isWaiting == 0){
-    LFM_isWaiting = 1;
-    setTimeout(LFM_updateNowPlaying, 10000);
-  }
-}
