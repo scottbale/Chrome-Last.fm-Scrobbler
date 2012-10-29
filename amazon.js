@@ -57,6 +57,10 @@ var songTrack = function (song) {
   return track (song.title, song.artist);
 }
 
+/**
+ * Encapsulate some "private" state and functions,
+ * present a "public" API.
+ */
 var module = function() {
 
   var resetState = function (track) {
@@ -71,7 +75,6 @@ var module = function() {
     return resetState ("");
   }
 
-  // encapsulate some "private" state and functions
   var state = initState();
 
   var parseNewState = function() {
@@ -87,13 +90,9 @@ var module = function() {
   }
 
   var maybeScrobbled = function (scrobbledSong) {
-    console.log ("maybe scrobbled: " + songTrack (scrobbledSong) + " ?= " + state.lastTrack);
     if (state.lastTrack == songTrack (scrobbledSong)) {
       state.scrobbled = true;
-      console.log ("yes, scrobbled");
-    } else {
-      console.log ("nope");
-    }
+    } 
   }
 
   var update = function(newState) {
@@ -125,9 +124,12 @@ var module = function() {
     }
   }
 
+  /**
+   * Pause requests are ignored for a track that has already been
+   * scrobbled. But a "reset" request forces a reset.
+   */
   var cancelAndReset = function(force) {
     if (force || !(state.scrobbled)) {
-      console.log ("resetting...")
       clearTimeout();
       state = initState();
       chrome.extension.sendRequest({type: "reset"});
@@ -141,7 +143,9 @@ var module = function() {
     }
   }
 
-  // Here is the "public" API
+  /**
+   * Here is the "public" API.
+   */
   return {
     updateNowPlaying : function() {
       updateIfNotLocked();
@@ -155,7 +159,9 @@ var module = function() {
     reset : function() {
       cancelAndReset(true);
     },
-    // Handle confirmation from main scrobbler.js
+    /**
+     * Handle confirmation of scrobble from main scrobbler.js
+     */
     scrobbled : function (song) {
       maybeScrobbled (song);
     }
@@ -172,21 +178,15 @@ chrome.extension.onRequest.addListener(
       // translate song from scrobbler.js to amazon.js - TODO Clean
       // this up re: "title" versus "track" confusion
       var amazonSong = {artist: request.song.artist, title: request.song.track};
-      console.log ("got submitOK for song: " + songTrack (amazonSong));
       module.scrobbled (amazonSong);
-      break;
-
-    // not used yet
-    case 'submitFAIL':
-      console.log ("got submitFAIL");
-      //alert('submit fail');
       break;
     }
   }
 );
 
-
-// Run at startup
+/**
+ * Run at startup
+ */
 $(function(){
   console.log("Amazon module starting up");
 
@@ -200,10 +200,8 @@ $(function(){
 
   $(LFM_PLAYER_MASTER_CONTROL).click( function(e) {
     if (isPaused()) {
-      console.log("paused");
       module.pause();
     } else if (isPlaying()) {
-      console.log("unpaused");
       module.resume();
     }
     return;
